@@ -40,9 +40,8 @@ export const appStyles = css`
     .shell { grid-template-columns: 340px minmax(0, 1fr); }
     .shell > workspace-panel { display: none; }
     .mobile-tabs { display: flex; }
-    main.files-view chat-view, main.files-view prompt-editor, main.files-view status-bar,
-    main.git-view chat-view, main.git-view prompt-editor, main.git-view status-bar,
-    main.files-view .empty, main.git-view .empty { display: none; }
+    main.workspace-view chat-view, main.workspace-view prompt-editor, main.workspace-view status-bar,
+    main.workspace-view .empty { display: none; }
     main.chat-view .mobile-panel { display: none; }
     .mobile-panel { flex: 1 1 auto; min-height: 0; display: flex; }
     .mobile-panel workspace-panel { flex: 1 1 auto; border-left: 0; }

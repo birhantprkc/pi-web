@@ -1,24 +1,7 @@
-import type { AppAction } from "./actions";
-import type { AppState } from "./appState";
+import type { AppState } from "../../appState";
+import type { PluginAction } from "../types";
 
-export interface AppActionContext {
-  state: AppState;
-  openActionPalette: () => void;
-  focusPrompt: () => void;
-  addProject: () => void | Promise<void>;
-  selectMainView: (view: AppState["mainView"]) => void;
-  refreshFiles: () => void | Promise<void>;
-  refreshGit: () => void | Promise<void>;
-  startSession: () => void | Promise<void>;
-  archiveSession: () => void | Promise<void>;
-  stopActiveWork: () => void | Promise<void>;
-}
-
-export function createAppActions(context: AppActionContext): AppAction[] {
-  const hasWorkspace = context.state.selectedWorkspace !== undefined;
-  const hasSession = context.state.selectedSession !== undefined;
-  const canArchiveSession = hasSession && context.state.selectedSession?.archived !== true;
-  const isBusy = isActive(context.state.status);
+export function createCoreActions(): PluginAction[] {
   return [
     {
       id: "actions.show",
@@ -26,28 +9,28 @@ export function createAppActions(context: AppActionContext): AppAction[] {
       description: "Open the command palette",
       shortcut: "mod+k",
       group: "General",
-      run: context.openActionPalette,
+      run: (context) => { context.openActionPalette(); },
     },
     {
       id: "prompt.focus",
       title: "Focus Prompt",
       description: "Move keyboard focus to the message composer",
       group: "General",
-      enabled: hasSession,
-      run: context.focusPrompt,
+      enabled: (context) => context.state.selectedSession !== undefined,
+      run: (context) => { context.focusPrompt(); },
     },
     {
       id: "project.add",
       title: "Add Project",
       group: "Project",
-      run: context.addProject,
+      run: (context) => context.addProject(),
     },
     {
       id: "view.chat",
       title: "Go to Chat",
       shortcut: "mod+1",
       group: "Navigation",
-      run: () => { context.selectMainView("chat"); },
+      run: (context) => { context.selectMainView("chat"); },
     },
     {
       id: "view.files",
@@ -55,7 +38,7 @@ export function createAppActions(context: AppActionContext): AppAction[] {
       shortcut: "mod+2",
       group: "Navigation",
       enabled: hasWorkspace,
-      run: () => { context.selectMainView("files"); },
+      run: (context) => { context.selectMainView("core:workspace.files"); },
     },
     {
       id: "view.git",
@@ -63,7 +46,7 @@ export function createAppActions(context: AppActionContext): AppAction[] {
       shortcut: "mod+3",
       group: "Navigation",
       enabled: hasWorkspace,
-      run: () => { context.selectMainView("git"); },
+      run: (context) => { context.selectMainView("core:workspace.git"); },
     },
     {
       id: "workspace.refresh-files",
@@ -71,7 +54,7 @@ export function createAppActions(context: AppActionContext): AppAction[] {
       shortcut: "mod+shift+f",
       group: "Workspace",
       enabled: hasWorkspace,
-      run: context.refreshFiles,
+      run: (context) => context.refreshFiles(),
     },
     {
       id: "workspace.refresh-git",
@@ -79,7 +62,7 @@ export function createAppActions(context: AppActionContext): AppAction[] {
       shortcut: "mod+shift+g",
       group: "Workspace",
       enabled: hasWorkspace,
-      run: context.refreshGit,
+      run: (context) => context.refreshGit(),
     },
     {
       id: "workspace.refresh-current",
@@ -87,7 +70,7 @@ export function createAppActions(context: AppActionContext): AppAction[] {
       shortcut: "mod+shift+r",
       group: "Workspace",
       enabled: hasWorkspace,
-      run: () => context.state.workspaceTool === "git" ? context.refreshGit() : context.refreshFiles(),
+      run: (context) => context.state.workspaceTool === "core:workspace.git" ? context.refreshGit() : context.refreshFiles(),
     },
     {
       id: "session.start",
@@ -95,25 +78,29 @@ export function createAppActions(context: AppActionContext): AppAction[] {
       shortcut: "mod+enter",
       group: "Session",
       enabled: hasWorkspace,
-      run: context.startSession,
+      run: (context) => context.startSession(),
     },
     {
       id: "session.archive",
       title: "Archive Session",
       description: "Archive the selected session",
       group: "Session",
-      enabled: canArchiveSession,
-      run: context.archiveSession,
+      enabled: (context) => context.state.selectedSession !== undefined && context.state.selectedSession.archived !== true,
+      run: (context) => context.archiveSession(),
     },
     {
       id: "session.stop",
       title: "Stop Active Work",
       shortcut: "mod+.",
       group: "Session",
-      enabled: hasSession && isBusy,
-      run: context.stopActiveWork,
+      enabled: (context) => context.state.selectedSession !== undefined && isActive(context.state.status),
+      run: (context) => context.stopActiveWork(),
     },
   ];
+}
+
+function hasWorkspace(context: { state: AppState }): boolean {
+  return context.state.selectedWorkspace !== undefined;
 }
 
 function isActive(status: AppState["status"]): boolean {

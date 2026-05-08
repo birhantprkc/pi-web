@@ -36,8 +36,8 @@ describe("route helpers", () => {
       projectId: "p1",
       workspaceId: "w1",
       sessionId: "s1",
-      tool: "git",
-      view: "files",
+      tool: "core:workspace.git",
+      view: "core:workspace.files",
       file: "src/main.ts",
       diff: "README.md",
     });
@@ -55,7 +55,7 @@ describe("route helpers", () => {
       projectId: "project/id",
       workspaceId: "workspace id",
       sessionId: "",
-      tool: "files",
+      tool: "core:workspace.files",
       view: "chat",
       file: "src/main.ts",
       diff: undefined,
@@ -63,13 +63,13 @@ describe("route helpers", () => {
 
     writeRoute(route);
 
-    expect(pushed).toEqual(["http://localhost/app?old=1&project=project%2Fid&workspace=workspace+id&tool=files&view=chat&file=src%2Fmain.ts#section"]);
+    expect(pushed).toEqual(["http://localhost/app?old=1&project=project%2Fid&workspace=workspace+id&tool=core%3Aworkspace.files&view=chat&file=src%2Fmain.ts#section"]);
   });
 
   it("does not push history when the route is unchanged", () => {
-    const { pushed } = installWindow("http://localhost/app?project=p1&tool=git");
+    const { pushed } = installWindow("http://localhost/app?project=p1&tool=core%3Aworkspace.git");
 
-    writeRoute({ projectId: "p1", workspaceId: undefined, sessionId: undefined, tool: "git", view: undefined, file: undefined, diff: undefined });
+    writeRoute({ projectId: "p1", workspaceId: undefined, sessionId: undefined, tool: "core:workspace.git", view: undefined, file: undefined, diff: undefined });
 
     expect(pushed).toEqual([]);
   });

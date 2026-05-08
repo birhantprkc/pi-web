@@ -38,7 +38,7 @@ export class FileExplorerController {
     const project = this.getState().selectedProject;
     const workspace = this.getState().selectedWorkspace;
     if (project === undefined || workspace === undefined) return;
-    this.setState({ selectedFilePath: path, selectedFileContent: undefined, workspaceTool: "files", mainView: this.getState().mainView === "chat" ? "chat" : "files" });
+    this.setState({ selectedFilePath: path, selectedFileContent: undefined, workspaceTool: "core:workspace.files", mainView: this.getState().mainView === "chat" ? "chat" : "core:workspace.files" });
     this.updateUrl();
     try {
       this.setState({ selectedFileContent: await api.workspaceFile(project.id, workspace.id, path), error: "" });

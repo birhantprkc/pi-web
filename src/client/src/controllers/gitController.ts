@@ -32,7 +32,7 @@ export class GitController {
   }
 
   async selectDiff(path: string): Promise<void> {
-    this.setState({ selectedDiffPath: path, selectedDiff: undefined, selectedStagedDiff: undefined, workspaceTool: "git", mainView: this.getState().mainView === "chat" ? "chat" : "git" });
+    this.setState({ selectedDiffPath: path, selectedDiff: undefined, selectedStagedDiff: undefined, workspaceTool: "core:workspace.git", mainView: this.getState().mainView === "chat" ? "chat" : "core:workspace.git" });
     this.updateUrl();
     await this.refreshDiff(path);
   }
@@ -55,7 +55,7 @@ export class GitController {
   updatePolling(): void {
     this.dispose();
     const state = this.getState();
-    if (state.workspaceTool === "git" || state.mainView === "git") {
+    if (state.workspaceTool === "core:workspace.git" || state.mainView === "core:workspace.git") {
       this.pollTimer = window.setInterval(() => { void this.refreshGit(); }, 8000);
     }
   }

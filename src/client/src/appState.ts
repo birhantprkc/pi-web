@@ -1,5 +1,6 @@
 import type { CommandResult, FileContentResponse, FileTreeEntry, GitDiffResponse, GitStatusResponse, Project, SessionActivity, SessionInfo, SessionStatus, Workspace } from "./api";
 import type { ChatLine } from "./components/shared";
+import type { QualifiedContributionId } from "./plugins/types";
 
 export interface AppState {
   projects: Project[];
@@ -19,8 +20,8 @@ export interface AppState {
   commandDialog: Extract<CommandResult, { type: "select" }> | undefined;
   actionPaletteOpen: boolean;
   projectDialogOpen: boolean;
-  workspaceTool: "files" | "git";
-  mainView: "chat" | "files" | "git";
+  workspaceTool: QualifiedContributionId;
+  mainView: "chat" | QualifiedContributionId;
   fileTree: FileTreeEntry[];
   expandedDirs: Record<string, FileTreeEntry[]>;
   selectedFilePath: string | undefined;
@@ -53,7 +54,7 @@ export function initialAppState(): AppState {
     commandDialog: undefined,
     actionPaletteOpen: false,
     projectDialogOpen: false,
-    workspaceTool: "files",
+    workspaceTool: "core:workspace.files",
     mainView: "chat",
     fileTree: [],
     expandedDirs: {},

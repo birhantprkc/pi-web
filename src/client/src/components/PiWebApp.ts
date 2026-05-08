@@ -2,7 +2,6 @@ import { LitElement, html } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
 import type { Project, SessionInfo, Workspace } from "../api";
 import type { AppAction } from "../actions";
-import { createAppActions } from "../appActions";
 import { initialAppState, type AppState } from "../appState";
 import { FileExplorerController } from "../controllers/fileExplorerController";
 import { GitController } from "../controllers/gitController";
@@ -10,6 +9,10 @@ import { ProjectController } from "../controllers/projectController";
 import { SessionController } from "../controllers/sessionController";
 import { WorkspaceController } from "../controllers/workspaceController";
 import { KeyboardShortcutDispatcher } from "../keyboardShortcuts";
+import type { QualifiedContributionId, PluginRuntimeContext } from "../plugins/types";
+import { corePlugin } from "../plugins/core";
+import { examplePlugin } from "../plugins/example";
+import { PluginRegistry } from "../plugins/registry";
 import { readRoute, writeRoute } from "../route";
 import "./ProjectList";
 import "./WorkspaceList";
@@ -58,6 +61,7 @@ export class PiWebApp extends LitElement {
     () => { this.updateUrl(); },
   );
   private readonly keyboard = new KeyboardShortcutDispatcher();
+  private readonly plugins = createPluginRegistry();
   private readonly onPopState = () => void this.withChatScrollTransition(() => this.restoreRoute(false));
   private readonly onKeyDown = (event: KeyboardEvent) => {
     if (this.keyboard.handle(event, this.getActions())) {
@@ -102,9 +106,9 @@ export class PiWebApp extends LitElement {
     const project = this.state.projects.find((p) => p.id === route.projectId);
     if (!project) return;
     await this.workspaces.selectProject(project, { workspaceId: route.workspaceId, sessionId: route.sessionId, updateUrl });
-    if (route.tool === "files") await this.files.refreshFiles();
+    if (route.tool === "core:workspace.files") await this.files.refreshFiles();
     if (route.file !== undefined) await this.files.selectFile(route.file);
-    if (route.tool === "git") await this.git.refreshGit();
+    if (route.tool === "core:workspace.git") await this.git.refreshGit();
     if (route.diff !== undefined) await this.git.selectDiff(route.diff);
     this.git.updatePolling();
   }
@@ -140,26 +144,23 @@ export class PiWebApp extends LitElement {
     });
   }
 
-  private selectWorkspaceTool(tool: "files" | "git") {
+  private selectWorkspaceTool(tool: QualifiedContributionId) {
     this.setState({ workspaceTool: tool, mainView: tool });
     this.updateUrl();
-    if (tool === "files") void this.files.refreshFiles();
-    else void this.git.refreshGit();
+    this.refreshSelectedWorkspaceTool(tool);
     this.git.updatePolling();
   }
 
-  private selectMainView(view: "chat" | "files" | "git") {
+  private selectMainView(view: AppState["mainView"]) {
     this.setState({ mainView: view, workspaceTool: view === "chat" ? this.state.workspaceTool : view });
     this.updateUrl();
-    if (view === "files") void this.files.refreshFiles();
-    if (view === "git") void this.git.refreshGit();
+    if (view !== "chat") this.refreshSelectedWorkspaceTool(view);
     this.git.updatePolling();
   }
 
   private handleWorkspaceChange(previous: AppState, next: AppState) {
     if (previous.selectedWorkspace?.id === next.selectedWorkspace?.id || next.selectedWorkspace === undefined) return;
-    if (next.workspaceTool === "files") void this.files.refreshFiles();
-    if (next.workspaceTool === "git") void this.git.refreshGit();
+    this.refreshSelectedWorkspaceTool(next.workspaceTool);
     this.git.updatePolling();
   }
 
@@ -168,28 +169,37 @@ export class PiWebApp extends LitElement {
     const nowActive = isActive(next.status);
     if (wasActive && !nowActive) {
       this.setState({ fileTreeStale: true, gitStale: true });
-      if (this.state.workspaceTool === "files") void this.files.refreshFiles();
-      if (this.state.workspaceTool === "git") void this.git.refreshGit();
+      this.refreshSelectedWorkspaceTool(this.state.workspaceTool);
     }
   }
 
+  private refreshSelectedWorkspaceTool(tool: QualifiedContributionId): void {
+    if (tool === "core:workspace.files") void this.files.refreshFiles();
+    if (tool === "core:workspace.git") void this.git.refreshGit();
+  }
+
   private renderWorkspacePanel() {
-    return html`<workspace-panel .workspace=${this.state.selectedWorkspace} .tool=${this.state.workspaceTool} .fileTree=${this.state.fileTree} .expandedDirs=${this.state.expandedDirs} .selectedFilePath=${this.state.selectedFilePath} .selectedFileContent=${this.state.selectedFileContent} .fileTreeStale=${this.state.fileTreeStale} .gitStatus=${this.state.gitStatus} .selectedDiffPath=${this.state.selectedDiffPath} .selectedDiff=${this.state.selectedDiff} .selectedStagedDiff=${this.state.selectedStagedDiff} .gitStale=${this.state.gitStale} .onSelectTool=${(tool: "files" | "git") => { this.selectWorkspaceTool(tool); }} .onRefreshFiles=${() => this.files.refreshFiles()} .onExpandDir=${(path: string) => this.files.expandDir(path)} .onSelectFile=${(path: string) => this.files.selectFile(path)} .onRefreshGit=${() => this.git.refreshGit()} .onSelectDiff=${(path: string) => this.git.selectDiff(path)}></workspace-panel>`;
+    return html`<workspace-panel .workspace=${this.state.selectedWorkspace} .tool=${this.state.workspaceTool} .panels=${this.plugins.getWorkspacePanels()} .fileTree=${this.state.fileTree} .expandedDirs=${this.state.expandedDirs} .selectedFilePath=${this.state.selectedFilePath} .selectedFileContent=${this.state.selectedFileContent} .fileTreeStale=${this.state.fileTreeStale} .gitStatus=${this.state.gitStatus} .selectedDiffPath=${this.state.selectedDiffPath} .selectedDiff=${this.state.selectedDiff} .selectedStagedDiff=${this.state.selectedStagedDiff} .gitStale=${this.state.gitStale} .onSelectTool=${(tool: QualifiedContributionId) => { this.selectWorkspaceTool(tool); }} .onRefreshFiles=${() => this.files.refreshFiles()} .onExpandDir=${(path: string) => this.files.expandDir(path)} .onSelectFile=${(path: string) => this.files.selectFile(path)} .onRefreshGit=${() => this.git.refreshGit()} .onSelectDiff=${(path: string) => this.git.selectDiff(path)}></workspace-panel>`;
   }
 
   private getActions(): AppAction[] {
-    return createAppActions({
+    return this.plugins.getActions(this.createPluginRuntimeContext());
+  }
+
+  private createPluginRuntimeContext(): PluginRuntimeContext {
+    return {
       state: this.state,
       openActionPalette: () => { this.setState({ actionPaletteOpen: true }); },
       focusPrompt: () => { this.promptEditor?.focusInput(); },
       addProject: () => { this.setState({ projectDialogOpen: true }); },
       selectMainView: (view) => { this.selectMainView(view); },
+      selectWorkspaceTool: (tool) => { this.selectWorkspaceTool(tool); },
       refreshFiles: () => this.files.refreshFiles(),
       refreshGit: () => this.git.refreshGit(),
       startSession: () => this.withChatScrollTransition(() => this.sessions.startSession()),
       archiveSession: () => this.sessions.archiveSession(),
       stopActiveWork: () => this.sessions.stopActiveWork(),
-    });
+    };
   }
 
   private runAction(actionId: string) {
@@ -210,11 +220,12 @@ export class PiWebApp extends LitElement {
           <workspace-list .workspaces=${state.workspaces} .selected=${state.selectedWorkspace} .onSelect=${(workspace: Workspace) => this.withChatScrollTransition(() => this.workspaces.selectWorkspace(workspace))}></workspace-list>
           <session-list .sessions=${state.sessions} .statuses=${state.sessionStatuses} .activities=${state.sessionActivities} .selected=${state.selectedSession} .canStart=${!!state.selectedWorkspace} .onStart=${() => this.withChatScrollTransition(() => this.sessions.startSession())} .onSelect=${(session: SessionInfo) => this.withChatScrollTransition(() => this.sessions.selectSession(session))} .onArchive=${(session: SessionInfo) => this.sessions.archiveSession(session)} .onRestore=${(session: SessionInfo) => this.sessions.restoreSession(session)}></session-list>
         </aside>
-        <main class=${`${state.mainView}-view`}>
+        <main class=${state.mainView === "chat" ? "chat-view" : "workspace-view"}>
           <div class="mobile-tabs">
             <button class=${state.mainView === "chat" ? "selected" : ""} @click=${() => { this.selectMainView("chat"); }}>Chat</button>
-            <button class=${state.mainView === "files" ? "selected" : ""} @click=${() => { this.selectMainView("files"); }}>Files</button>
-            <button class=${state.mainView === "git" ? "selected" : ""} @click=${() => { this.selectMainView("git"); }}>Git</button>
+            ${this.plugins.getWorkspacePanels().map((panel) => html`
+              <button class=${state.mainView === panel.id ? "selected" : ""} @click=${() => { this.selectMainView(panel.id); }}>${panel.title}</button>
+            `)}
           </div>
           ${state.error ? html`<div class="error">${state.error}</div>` : null}
           ${state.selectedSession ? html`
@@ -233,6 +244,13 @@ export class PiWebApp extends LitElement {
   }
 
   static override styles = appStyles;
+}
+
+function createPluginRegistry(): PluginRegistry {
+  const registry = new PluginRegistry();
+  registry.register(corePlugin);
+  registry.register(examplePlugin);
+  return registry;
 }
 
 function isActive(status: AppState["status"]): boolean {

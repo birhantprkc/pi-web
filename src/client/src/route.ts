@@ -1,9 +1,11 @@
+import type { QualifiedContributionId } from "./plugins/types";
+
 export interface AppRoute {
   projectId: string | undefined;
   workspaceId: string | undefined;
   sessionId: string | undefined;
-  tool: "files" | "git" | undefined;
-  view: "chat" | "files" | "git" | undefined;
+  tool: QualifiedContributionId | undefined;
+  view: "chat" | QualifiedContributionId | undefined;
   file: string | undefined;
   diff: string | undefined;
 }
@@ -42,10 +44,19 @@ export function writeRoute(route: AppRoute): void {
   if (next !== current) window.history.pushState({}, "", url);
 }
 
-function parseTool(value: string | null): "files" | "git" | undefined {
-  return value === "files" || value === "git" ? value : undefined;
+function parseTool(value: string | null): QualifiedContributionId | undefined {
+  if (value === "files") return "core:workspace.files";
+  if (value === "git") return "core:workspace.git";
+  return isQualifiedId(value) ? value : undefined;
 }
 
-function parseView(value: string | null): "chat" | "files" | "git" | undefined {
-  return value === "chat" || value === "files" || value === "git" ? value : undefined;
+function parseView(value: string | null): "chat" | QualifiedContributionId | undefined {
+  if (value === "chat") return "chat";
+  if (value === "files") return "core:workspace.files";
+  if (value === "git") return "core:workspace.git";
+  return isQualifiedId(value) ? value : undefined;
+}
+
+function isQualifiedId(value: string | null): value is QualifiedContributionId {
+  return value !== null && /^[a-z][a-z0-9.-]*:[a-z][a-z0-9.-]*$/u.test(value);
 }
