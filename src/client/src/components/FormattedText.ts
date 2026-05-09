@@ -38,12 +38,14 @@ export class FormattedText extends LitElement {
   }
 
   private readonly onFormattedClick = (event: MouseEvent): void => {
-    if (!(event.target instanceof HTMLButtonElement) || !event.target.classList.contains("code-copy-button")) return;
-    const wrapper = event.target.closest(".code-block-wrapper");
+    if (!(event.target instanceof Element)) return;
+    const button = event.target.closest(".code-copy-button");
+    if (!(button instanceof HTMLButtonElement)) return;
+    const wrapper = button.closest(".code-block-wrapper");
     if (!(wrapper instanceof HTMLElement)) return;
     const code = wrapper.querySelector("pre code");
     if (!(code instanceof HTMLElement)) return;
-    void this.copyCode(code.textContent, event.target);
+    void this.copyCode(code.textContent, button);
   };
 
   private async copyCode(text: string, button: HTMLButtonElement): Promise<void> {
