@@ -281,10 +281,10 @@ export const actionPaletteStyles = css`
 
 export const promptEditorStyles = css`
   :host { position: relative; z-index: 5; display: block; color: #e6edf3; font: 14px system-ui, sans-serif; }
-  footer { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 12px; border-top: 1px solid #30363d; }
+  footer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 12px; border-top: 1px solid #30363d; }
   footer.shell-mode { border-top-color: #3fb950; background: #0f1b12; }
   .editor-wrap { position: relative; min-width: 0; }
-  .actions { display: flex; gap: 8px; align-items: start; white-space: nowrap; }
+  .actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; white-space: nowrap; }
   .compact-status { display: flex; min-width: 0; align-items: center; gap: 6px; color: #8b949e; font-size: 12px; flex: 1 1 280px; }
   .compact-status > button, .model-controls { flex: 0 1 auto; min-width: 0; }
   .model-controls { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
@@ -296,8 +296,8 @@ export const promptEditorStyles = css`
   button { border: 1px solid #30363d; border-radius: 8px; background: #161b22; color: #e6edf3; padding: 7px 9px; cursor: pointer; }
   button:disabled, textarea:disabled { opacity: .5; cursor: not-allowed; }
   @media (max-width: 640px) {
-    footer { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 8px; }
-    .actions { justify-content: flex-end; flex-wrap: wrap; align-items: center; gap: 6px; }
+    footer { gap: 8px; padding: 8px; }
+    .actions { gap: 6px; }
     .compact-status { flex: 1 1 220px; gap: 4px; }
     .compact-status .model-controls button:nth-child(2) { max-width: min(50vw, 230px); }
     button { padding: 6px 8px; }
