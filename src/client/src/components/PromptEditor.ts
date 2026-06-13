@@ -7,7 +7,7 @@ import { LitElement, html, type PropertyValues } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { api, type FileSuggestion, type PromptAttachment, type SessionStatus, type SlashCommand } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
-import { isSupportedImageMimeType } from "../../../shared/promptAttachments";
+import { captureImageAttachments } from "../promptAttachmentCapture";
 import { inputModeForDraft } from "../inputModes";
 import { machineSessionKey } from "../machineKeys";
 import { detectPromptCompletionTrigger, fileCompletionInsertText, type PromptCompletionTrigger } from "../promptCompletions";
@@ -187,24 +187,11 @@ export class PromptEditor extends LitElement {
 
   private async addAttachmentFiles(files: File[]) {
     this.attachmentError = undefined;
-    for (const file of files) {
-      if (!isSupportedImageMimeType(file.type)) {
-        this.attachmentError = "Only PNG, JPEG, GIF, and WebP images are supported.";
-        continue;
-      }
-      try {
-        const data = await readFileAsBase64(file);
-        this.attachments = [...this.attachments, {
-          id: `attachment-${String(++this.attachmentSeq)}`,
-          name: file.name !== "" ? file.name : `pasted-image.${file.type.split("/")[1] ?? "png"}`,
-          mimeType: file.type,
-          data,
-          size: file.size,
-        }];
-      } catch {
-        this.attachmentError = "Failed to read an attachment.";
-      }
+    const { attachments, error } = await captureImageAttachments(files, readFileAsBase64);
+    if (attachments.length > 0) {
+      this.attachments = [...this.attachments, ...attachments.map((attachment) => ({ id: `attachment-${String(++this.attachmentSeq)}`, ...attachment }))];
     }
+    if (error !== undefined) this.attachmentError = error;
   }
 
   private currentAttachments(): PromptAttachment[] {
