@@ -31,9 +31,27 @@ import type { SavedPromptAttachment } from "../../shared/apiTypes.js";
 
 import { cwdPathsEqual } from "../workingDirectory.js";
 import type { WorkspaceActivityService } from "../activity/workspaceActivityService.js";
+import { createSpawnSessionToolDefinition, type SpawnSessionInvocation, type SpawnSessionResult } from "./spawnSessionTool.js";
+import type { SpawnTargetDecision, SpawnTargetResolver } from "./spawnTargetResolver.js";
+
+/**
+ * Minimal structured-logging seam, shaped like Fastify's logger so sessiond can
+ * pass `app.log` directly. Defaults to a no-op so the service stays usable
+ * without booting a server (e.g. in tests).
+ */
+export interface PiSessionLogger {
+  info(details: Record<string, unknown>, message: string): void;
+}
+
+const noopLogger: PiSessionLogger = { info() { /* no-op */ } };
 
 function noop(): void {
   // Intentionally empty default unsubscribe callback.
+}
+
+function spawnTargetError(decision: Extract<SpawnTargetDecision, { allowed: false }>): Error {
+  if (decision.reason === "not-registered") return new Error("Spawning session is not in a registered project");
+  return new Error(`cwd must be a workspace of this project. Allowed: ${decision.allowedCwds.join(", ")}`);
 }
 
 function authLossWarningKey(sessionId: string, provider: string, modelId: string): string {
@@ -187,10 +205,15 @@ function defaultCreateAgentRuntime(createRuntime: CreateAgentSessionRuntimeFacto
   return createAgentSessionRuntime(createRuntime, { ...options, sessionManager: options.sessionManager });
 }
 
-function createDefaultRuntimeFactory(authStorage: AuthStorage, modelRegistry: ModelRegistryInstance): CreateAgentSessionRuntimeFactory {
+type SpawnSessionFn = (input: SpawnSessionInvocation) => Promise<SpawnSessionResult>;
+
+function createDefaultRuntimeFactory(authStorage: AuthStorage, modelRegistry: ModelRegistryInstance, spawn?: SpawnSessionFn): CreateAgentSessionRuntimeFactory {
   return async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
     const services = await createAgentSessionServices({ cwd, agentDir, authStorage, modelRegistry });
-    const customTools = [createPiWebEditToolDefinition(cwd)];
+    const customTools = [
+      createPiWebEditToolDefinition(cwd),
+      ...(spawn === undefined ? [] : [createSpawnSessionToolDefinition(cwd, { spawn })]),
+    ];
     const options = sessionStartEvent === undefined
       ? { services, sessionManager, customTools }
       : { services, sessionManager, sessionStartEvent, customTools };
@@ -232,6 +255,14 @@ export interface PiSessionServiceDependencies {
   modelRegistry?: ModelRegistryInstance;
   heartbeatIntervalMs?: number;
   workspaceActivity?: Pick<WorkspaceActivityService, "applySessionStatus" | "applySessionActivity" | "removeSession" | "reconcileSessionActivity">;
+  /**
+   * When provided, the `spawn_session` tool is registered on every session,
+   * letting the LLM start new sessions scoped to its project's workspaces.
+   * Omit to keep the capability disabled (the tool is never registered).
+   */
+  spawnTargets?: SpawnTargetResolver;
+  /** Structured logger for notable runtime events (e.g. spawns). */
+  logger?: PiSessionLogger;
 }
 
 export class PiSessionService {
@@ -249,13 +280,21 @@ export class PiSessionService {
   private readonly createAgentRuntime: CreateAgentRuntime;
   private readonly modelRegistry: ModelRegistryInstance;
   private readonly workspaceActivity: Pick<WorkspaceActivityService, "applySessionStatus" | "applySessionActivity" | "removeSession" | "reconcileSessionActivity"> | undefined;
+  private readonly spawnTargets: SpawnTargetResolver | undefined;
+  private readonly logger: PiSessionLogger;
 
   constructor(private readonly events: SessionEventHub, deps: PiSessionServiceDependencies = {}) {
     this.archiveStore = deps.archiveStore ?? new SessionArchiveStore();
     this.agentDir = deps.agentDir ?? getAgentDir();
     this.sessionManager = deps.sessionManager ?? createPiSessionManagerGateway({ agentDir: this.agentDir });
     this.modelRegistry = deps.modelRegistry ?? ModelRegistry.create(AuthStorage.create());
-    this.createRuntime = deps.createRuntime ?? createDefaultRuntimeFactory(this.modelRegistry.authStorage, this.modelRegistry);
+    this.spawnTargets = deps.spawnTargets;
+    this.logger = deps.logger ?? noopLogger;
+    this.createRuntime = deps.createRuntime ?? createDefaultRuntimeFactory(
+      this.modelRegistry.authStorage,
+      this.modelRegistry,
+      this.spawnTargets === undefined ? undefined : (input) => this.spawnSession(input),
+    );
     this.createAgentRuntime = deps.createAgentRuntime ?? defaultCreateAgentRuntime;
     this.workspaceActivity = deps.workspaceActivity;
     this.heartbeat = setInterval(() => { this.publishHeartbeats(); }, deps.heartbeatIntervalMs ?? 2000);
@@ -318,7 +357,7 @@ export class PiSessionService {
   async start(cwd: string): Promise<ClientSession> {
     const active = await this.create(this.sessionManager.create(cwd), cwd);
     const { session } = active.runtime;
-    return {
+    const created: ClientSession = {
       id: session.sessionId,
       path: session.sessionFile ?? "",
       cwd,
@@ -327,6 +366,28 @@ export class PiSessionService {
       messageCount: session.messages.length,
       firstMessage: "",
     };
+    // Broadcast so other clients (and the spawning agent's UI) can add the new
+    // session to their list without a manual reload.
+    this.events.publishGlobal({ type: "session.created", session: created });
+    return created;
+  }
+
+  /**
+   * Start a new session on behalf of a LLM and deliver an initial prompt to it.
+   * The target cwd is constrained to a workspace of the same registered project
+   * as the spawning session so the new session is visible in the web UI.
+   */
+  async spawnSession(input: SpawnSessionInvocation): Promise<SpawnSessionResult> {
+    if (this.spawnTargets === undefined) throw new Error("Spawning sessions is disabled");
+    const decision = await this.spawnTargets.resolveSpawnTarget(input.spawningCwd, input.cwd);
+    if (!decision.allowed) throw spawnTargetError(decision);
+    const created = await this.start(decision.cwd);
+    await this.prompt(created.id, input.prompt);
+    this.logger.info(
+      { spawningCwd: input.spawningCwd, sessionId: created.id, cwd: decision.cwd, promptLength: input.prompt.length },
+      "spawn_session started a new session",
+    );
+    return { sessionId: created.id, cwd: decision.cwd };
   }
 
   async messages(ref: PiSessionLookup, page?: { before?: number; limit?: number }): Promise<unknown[] | ClientMessagePage> {

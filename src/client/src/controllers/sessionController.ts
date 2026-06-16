@@ -51,6 +51,7 @@ export class SessionController {
   applyGlobalEvent(event: GlobalSessionEvent): void {
     if (event.type === "status.update") this.applyStatus(event.status);
     else if (event.type === "activity.update") this.applyActivity(event.activity);
+    else if (event.type === "session.created") this.applyCreatedSession(event.session);
     else this.applySessionName(event.sessionId, event.name);
   }
 
@@ -574,6 +575,16 @@ export class SessionController {
       this.setState({ sessions, selectedSession: current?.id === result.session.id ? result.session : current });
       if (current?.id !== result.session.id) void this.selectSession(result.session);
     }
+  }
+
+  private applyCreatedSession(session: SessionInfo) {
+    const state = this.getState();
+    // Only surface sessions for the workspace currently in view; others are
+    // picked up when their workspace is opened. Skip if already present (e.g.
+    // the optimistic insert from startSession in this same tab).
+    if (state.selectedWorkspace?.path !== session.cwd) return;
+    if (state.sessions.some((candidate) => candidate.id === session.id)) return;
+    this.setState({ sessions: [session, ...state.sessions] });
   }
 
   private applyActivity(activity: SessionActivity) {

@@ -142,6 +142,38 @@ describe("SessionController", () => {
     expect(state.selectedSession?.messageCount).toBe(3);
   });
 
+  it("adds a newly created session to the list when it belongs to the selected workspace", () => {
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      { socket: new FakeSocket() },
+    );
+    const spawned: SessionInfo = { ...oldSession, id: "spawned-session", path: "/tmp/spawned-session.jsonl" };
+
+    controller.applyGlobalEvent({ type: "session.created", session: spawned });
+
+    expect(state.sessions.map((session) => session.id)).toEqual(["spawned-session", "old-session"]);
+  });
+
+  it("ignores a created session for a different workspace or a duplicate id", () => {
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      { socket: new FakeSocket() },
+    );
+
+    controller.applyGlobalEvent({ type: "session.created", session: { ...oldSession, id: "other", cwd: "/other-repo" } });
+    controller.applyGlobalEvent({ type: "session.created", session: { ...oldSession } });
+
+    expect(state.sessions.map((session) => session.id)).toEqual(["old-session"]);
+  });
+
   it("toggles the per-session sending state around an inline attachment send and forwards attachments", async () => {
     let resolvePrompt: (() => void) | undefined;
     let promptArgs: { attachments?: PromptAttachment[] } | undefined;

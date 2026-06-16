@@ -59,6 +59,8 @@ export interface PiWebConfigValues {
   plugins?: PiWebPluginConfigMap;
   /** Maximum accepted HTTP request body size in bytes (uploads/attachments). */
   maxUploadBytes?: number;
+  /** When true, LLMs can start new sessions via the spawn_session tool. */
+  spawnSessions?: boolean;
 }
 
 export type PiWebPluginScope = "bundled" | "local" | "user" | "project";
@@ -80,6 +82,7 @@ export interface PiWebConfigEnvOverrides {
   host: boolean;
   port: boolean;
   allowedHosts: boolean;
+  spawnSessions: boolean;
 }
 
 export interface PiWebConfigResponse {
@@ -498,7 +501,8 @@ export type SessionUiEvent =
   | { type: "command.output"; level: "info" | "success" | "error"; message: string }
   | { type: "session.error"; message: string }
   | { type: "session.name"; sessionId: string; name?: string }
+  | { type: "session.created"; session: SessionInfo }
   | { type: "pi.event"; eventType: string };
 
-export type GlobalSessionEvent = Extract<SessionUiEvent, { type: "status.update" | "activity.update" | "session.name" }>;
+export type GlobalSessionEvent = Extract<SessionUiEvent, { type: "status.update" | "activity.update" | "session.name" | "session.created" }>;
 export type RealtimeEvent = GlobalSessionEvent | TerminalUiEvent | WorkspaceActivityUiEvent;
