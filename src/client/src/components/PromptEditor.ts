@@ -13,6 +13,7 @@ import { machineSessionKey } from "../machineKeys";
 import { detectPromptCompletionTrigger, fileCompletionInsertText, type PromptCompletionTrigger } from "../promptCompletions";
 import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
 import { loadAttachmentDelivery, saveAttachmentDelivery } from "../attachmentPreferences";
+import { createMobilePromptEnterMedia, shouldSendPromptOnEnter } from "../promptEnterBehavior";
 import { promptEditorStyles, type CompletionItem } from "./shared";
 import { renderAttachIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon, renderThinkingGauge } from "./promptEditorIcons";
 import { thinkingGauge, thinkingLevelLabel } from "../../../shared/thinkingLevels";
@@ -59,6 +60,7 @@ export class PromptEditor extends LitElement {
   private editor: EditorView | undefined;
   private readonly editableCompartment = new Compartment();
   private readonly readOnlyCompartment = new Compartment();
+  private readonly mobilePromptEnterMedia = createMobilePromptEnterMedia();
 
   protected override willUpdate(changed: PropertyValues<this>) {
     if (!changed.has("sessionId") && !changed.has("machineId")) return;
@@ -238,7 +240,7 @@ export class PromptEditor extends LitElement {
             { key: "ArrowDown", run: () => this.moveCompletion(1) },
             { key: "ArrowUp", run: () => this.moveCompletion(-1) },
             { key: "Escape", run: () => this.closeCompletions() },
-            { key: "Enter", run: () => this.handleEditorEnter() },
+            { key: "Enter", run: (view) => this.handleEditorEnter(view) },
             { key: "Shift-Enter", run: (view) => insertNewlineContinueMarkup(view) || insertNewlineAndIndent(view) },
             { key: "Tab", run: (view) => this.handleEditorTab(view) },
             { key: "Shift-Tab", run: (view) => indentWithTab.shift?.(view) ?? false },
@@ -335,11 +337,14 @@ export class PromptEditor extends LitElement {
     return true;
   }
 
-  private handleEditorEnter(): boolean {
+  private handleEditorEnter(view: EditorView): boolean {
     if (this.completions.length) {
       const completion = this.completions[this.selectedIndex];
       if (completion !== undefined) this.pick(completion);
       return true;
+    }
+    if (!shouldSendPromptOnEnter(this.mobilePromptEnterMedia)) {
+      return insertNewlineContinueMarkup(view) || insertNewlineAndIndent(view);
     }
     this.send(this.canSteer || this.isCompacting ? "followUp" : undefined);
     return true;
