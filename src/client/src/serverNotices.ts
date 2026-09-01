@@ -99,6 +99,11 @@ export class ServerNoticesController {
     };
   }
 
+  hasNotice(machineId: string, matches: (notice: ServerNotice) => boolean): boolean {
+    const projection = this.projection(machineId);
+    return projection?.status === "fresh" && projection.notices.some(matches);
+  }
+
   applyEvent(machineId: string, event: ServerNoticeEvent): void {
     const state = this.machine(machineId);
     this.recordObservedEvent(state, event);

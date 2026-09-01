@@ -254,7 +254,7 @@ describe("SessionController pending starts", () => {
     expect(state.sessions.map((session) => session.id)).toEqual([temporaryId]);
     expect(state.sessions[0]?.persisted).toBe(false);
     expect(state.activity).toMatchObject({ sessionId: temporaryId, phase: "error", label: "Session creation failed" });
-    expect(state.error).toContain("backend unavailable");
+    expect(Object.values(state.browserErrors).map((error) => error.message).join("\n")).toContain("backend unavailable");
 
     await controller.deleteCachedNewSession(state.sessions[0]);
 

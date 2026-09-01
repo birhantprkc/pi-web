@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { initialAppState } from "../appState";
+import { browserErrorScopeKey, sessionBrowserErrorScope, visibleBrowserErrors } from "../browserErrors";
 import { ChatTranscriptStore } from "../chatTranscriptStore";
 import { SessionController } from "./sessionController";
 import { defaultApi, deferred, FakeSocket, oldSession, replacementSession, sessionLookupId, status, workspace, type AppState, type MessagePage, type SessionStatus, type SessionStreamSnapshot } from "./sessionController.testSupport";
@@ -194,12 +195,50 @@ describe("SessionController selected-session refresh errors", () => {
     expect(warn).toHaveBeenCalledOnce();
   });
 
-  it("still surfaces a user-triggered refresh failure in the global error state", async () => {
+  it("surfaces a user-triggered refresh failure in the selected session scope", async () => {
     const harness = failingRefreshSetup();
 
     await harness.controller.refreshSelectedSession();
 
-    expect(harness.getState().error).toContain("poll boom");
+    expect(harness.getState().error).toBe("");
+    expect(visibleBrowserErrors(harness.getState().browserErrors, {
+      machineId: "local",
+      projectId: workspace.projectId,
+      workspaceId: workspace.id,
+      sessionId: oldSession.id,
+      cwd: oldSession.cwd,
+    }).map((entry) => entry.message)).toContain("Error: poll boom");
+  });
+});
+
+describe("SessionController scoped refresh errors", () => {
+  it("retains a late failure under its originating session instead of the newer selection", async () => {
+    const messages = deferred<MessagePage>();
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession, replacementSession] };
+    const api: typeof defaultApi = {
+      ...defaultApi,
+      messages: () => messages.promise,
+      status: () => Promise.resolve(status(oldSession.id)),
+      streamSnapshot: () => Promise.resolve({ seq: 0, partial: null }),
+    };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      { api, socket: new FakeSocket() },
+    );
+
+    const refresh = controller.refreshSelectedSession(oldSession.id);
+    await Promise.resolve();
+    state = { ...state, selectedSession: replacementSession };
+    messages.reject(new Error("old transcript unavailable"));
+    await refresh;
+
+    const oldScope = sessionBrowserErrorScope("local", oldSession.id, { cwd: oldSession.cwd, projectId: workspace.projectId, workspaceId: workspace.id });
+    expect(state.error).toBe("");
+    expect(state.browserErrors[browserErrorScopeKey(oldScope)]?.message).toBe("Error: old transcript unavailable");
+    expect(state.browserErrors[browserErrorScopeKey(sessionBrowserErrorScope("local", replacementSession.id, { cwd: replacementSession.cwd }))]).toBeUndefined();
   });
 });
 
