@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "../appState";
-import { browserErrorScopeKey, workspaceBrowserErrorScope } from "../browserErrors";
+import type { AppAction } from "../actions";
+import { browserErrorScopeKey, machineBrowserErrorScope, workspaceBrowserErrorScope } from "../browserErrors";
 import { HttpRequestError } from "../api/http";
 import { ServerNoticesController } from "../serverNotices";
-import type { Workspace } from "../api";
+import type { Machine, Workspace } from "../api";
+import type { ParsedAppRoute } from "../route";
 import { PiWebApp } from "./PiWebApp";
 
 const workspace: Workspace = {
@@ -38,6 +40,20 @@ function setState(app: PiWebApp, patch: Partial<AppState>): AppState {
 }
 
 type ReportWorkspaceRemovalFailure = (workspace: Workspace, machineId: string, scope: ReturnType<typeof workspaceBrowserErrorScope>, error: unknown) => Promise<void>;
+type SetRemoteRouteRestoreMessage = (route: ParsedAppRoute, options?: { exhausted?: boolean }) => void;
+type RunAction = (action: AppAction) => void;
+
+function setRemoteRouteRestoreMessage(app: PiWebApp): SetRemoteRouteRestoreMessage {
+  const method: unknown = Reflect.get(app, "setRemoteRouteRestoreMessage");
+  if (!isSetRemoteRouteRestoreMessage(method)) throw new Error("Remote route restore message boundary was unavailable");
+  return (route, options) => { method.call(app, route, options); };
+}
+
+function privateRunAction(app: PiWebApp): RunAction {
+  const method: unknown = Reflect.get(app, "runAction");
+  if (!isRunAction(method)) throw new Error("Action error boundary was unavailable");
+  return (action) => { method.call(app, action); };
+}
 
 function reportWorkspaceRemovalFailure(app: PiWebApp): ReportWorkspaceRemovalFailure {
   const method: unknown = Reflect.get(app, "reportWorkspaceRemovalFailure");
@@ -49,6 +65,14 @@ function isReportWorkspaceRemovalFailure(value: unknown): value is ReportWorkspa
   return typeof value === "function";
 }
 
+function isSetRemoteRouteRestoreMessage(value: unknown): value is SetRemoteRouteRestoreMessage {
+  return typeof value === "function";
+}
+
+function isRunAction(value: unknown): value is RunAction {
+  return typeof value === "function";
+}
+
 function isAppState(value: unknown): value is AppState {
   return typeof value === "object" && value !== null && "browserErrors" in value;
 }
@@ -56,6 +80,38 @@ function isAppState(value: unknown): value is AppState {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe("PiWebApp browser error boundaries", () => {
+  it("keeps remote route restore feedback on the affected machine", () => {
+    const app = createApp();
+    const remote: Machine = {
+      id: "remote-1",
+      name: "Remote",
+      kind: "remote",
+      createdAt: "now",
+      updatedAt: "now",
+    };
+    setState(app, { machines: [remote], selectedMachine: remote, error: "A legacy failure" });
+
+    setRemoteRouteRestoreMessage(app)({ machineId: remote.id, projectId: "project-1", workspaceId: undefined, sessionId: undefined, tool: undefined, view: undefined });
+
+    expect(appState(app).error).toBe("A legacy failure");
+    expect(appState(app).browserErrors[browserErrorScopeKey(machineBrowserErrorScope(remote.id))]?.message).toBe("Remote is unavailable; reconnecting…");
+  });
+
+  it("keeps unexpected action failures on the global browser surface", async () => {
+    const app = createApp();
+    const runAction = privateRunAction(app);
+    const action: AppAction = { id: "test.action", title: "Test action", run: () => Promise.reject(new Error("action failed")) };
+
+    runAction(action);
+    await vi.waitFor(() => {
+      expect(appState(app).browserErrors[browserErrorScopeKey({ kind: "global" })]?.message).toBe("Action failed: action failed");
+    });
+
+    expect(appState(app).error).toBe("");
+  });
 });
 
 describe("PiWebApp workspace removal browser error boundary", () => {
