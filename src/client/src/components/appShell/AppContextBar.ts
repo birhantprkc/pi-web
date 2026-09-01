@@ -9,6 +9,8 @@ import type { NavigationSection } from "../../appShell/navigationState";
 export class AppContextBar extends LitElement {
   @property({ attribute: false }) machines: Machine[] = [];
   @property({ attribute: false }) machine?: Machine;
+  /** PWA display mode: surfaces the machine location identity in the breadcrumb. */
+  @property({ type: Boolean }) locationIndicator = false;
   @property({ attribute: false }) project?: Project;
   @property({ attribute: false }) workspace?: Workspace;
   @property({ attribute: false }) session?: SessionInfo;
@@ -41,7 +43,10 @@ export class AppContextBar extends LitElement {
   override render() {
     const machine = displayMachine(this.machine, this.machines);
     const machineChoice = this.machines.length > 1;
-    const machineChipClass = machine === undefined ? "context-chip empty" : "context-chip";
+    // The chip is a machine picker whenever a choice exists; the location
+    // identity it carries is a PWA-only affordance (the browser shows the URL).
+    const showMachineChip = machineChoice || this.locationIndicator;
+    const machineChipClass = machine === undefined ? "context-chip machine-chip empty" : "context-chip machine-chip";
     const projectLabel = projectContextLabel(this.project);
     const workspaceLabel = workspaceContextLabel(this.workspace);
     const sessionLabel = sessionContextLabel(this.session);
@@ -49,18 +54,20 @@ export class AppContextBar extends LitElement {
       <nav class=${this.contextBarClass()} aria-label="Current location">
         <span class="context-bar-label">Location</span>
         <ol class="context-items" @scroll=${this.onContextScroll}>
-          <li class="context-item">
-            ${machineChoice ? html`
-              <button type="button" class=${machineChipClass} title=${machineContextTitle(machine)} aria-label=${`Machine: ${machineContextLabel(machine)}. Open machine selection.`} @click=${() => { this.onOpenSection?.("machines"); }}>
-                ${this.renderMachineChipContent(machine, true)}
-              </button>
-            ` : html`
-              <!-- No machine choice: the chip is the instance identity, not a control. -->
-              <span class="${machineChipClass} static" title=${machineContextTitle(machine)}>
-                ${this.renderMachineChipContent(machine, false)}
-              </span>
-            `}
-          </li>
+          ${showMachineChip ? html`
+            <li class="context-item">
+              ${machineChoice ? html`
+                <button type="button" class=${machineChipClass} title=${machineContextTitle(machine)} aria-label=${`Machine: ${machineContextLabel(machine)}. Open machine selection.`} @click=${() => { this.onOpenSection?.("machines"); }}>
+                  ${this.renderMachineChipContent(machine, this.locationIndicator)}
+                </button>
+              ` : html`
+                <!-- No machine choice: the chip is the instance identity, not a control. -->
+                <span class="${machineChipClass} static" title=${machineContextTitle(machine)}>
+                  ${this.renderMachineChipContent(machine, true)}
+                </span>
+              `}
+            </li>
+          ` : null}
           <li class="context-item">
             <button type="button" class=${this.project === undefined ? "context-chip empty" : "context-chip"} title=${projectContextTitle(this.project)} aria-label=${`Project: ${projectLabel}. Open project selection.`} @click=${() => { this.onOpenSection?.("projects"); }}>
               <span class="context-kind">Project</span>
@@ -85,20 +92,16 @@ export class AppContextBar extends LitElement {
     `;
   }
 
-  private renderMachineChipContent(machine: Machine | undefined, showName: boolean) {
+  private renderMachineChipContent(machine: Machine | undefined, locationIndicator: boolean) {
     if (machine === undefined) return html`<span class="context-value">No machine</span>`;
+    // Browser mode keeps the chip a plain machine picker; the location identity
+    // (favicon and host) only shows where the browser chrome does not.
+    if (!locationIndicator) return html`<span class="context-value">${machineSelectionLabel(machine)}</span>`;
     const detail = machineContextDetail(machine, browserGatewayDisplayUrl());
-    // A static identity chip leads with the URL; only a machine picker keeps the name.
-    if (!showName && detail !== undefined) {
-      return html`
-        <img class="context-chip-icon" src=${machineIconUrl(machine)} alt="" @error=${this.hideBrokenIcon} />
-        <span class="context-value">${detail}</span>
-      `;
-    }
     return html`
       <img class="context-chip-icon" src=${machineIconUrl(machine)} alt="" @error=${this.hideBrokenIcon} />
-      <span class="context-value">${machineContextLabel(machine)}</span>
-      ${detail === undefined ? null : html`<span class="context-detail">${detail}</span>`}
+      ${this.machines.length > 1 ? html`<span class="context-value">${machineContextLabel(machine)}</span>` : null}
+      ${detail === undefined ? null : html`<span class=${this.machines.length > 1 ? "context-detail" : "context-value"}>${detail}</span>`}
     `;
   }
 
@@ -202,6 +205,11 @@ function displayMachine(machine: Machine | undefined, machines: readonly Machine
 
 function machineContextLabel(machine: Machine | undefined): string {
   return machine?.name ?? "No machine";
+}
+
+/** The plain picker label used in browser mode, where the chip carries no location identity. */
+function machineSelectionLabel(machine: Machine): string {
+  return `${machine.name}${machine.kind === "remote" ? " · remote" : ""}`;
 }
 
 /**

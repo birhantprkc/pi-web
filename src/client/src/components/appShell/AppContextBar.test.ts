@@ -27,14 +27,14 @@ describe("machineContextDetail", () => {
 });
 
 describe("machine crumb", () => {
-  it("always shows the machine crumb, falling back to the local machine", async () => {
-    const bar = await mountBar({ machines: [machine("local")] });
+  it("always shows the machine crumb in PWA mode, falling back to the local machine", async () => {
+    const bar = await mountBar({ machines: [machine("local")], locationIndicator: true });
 
     expect(machineChip(bar)?.querySelector("img")).not.toBeNull();
   });
 
-  it("is a static identity chip leading with the URL when there is no machine choice", async () => {
-    const bar = await mountBar({ machines: [machine("local")] });
+  it("is a static identity chip leading with the URL in PWA mode when there is no machine choice", async () => {
+    const bar = await mountBar({ machines: [machine("local")], locationIndicator: true });
 
     const chip = machineChip(bar);
     expect(chip?.tagName).toBe("SPAN");
@@ -42,35 +42,48 @@ describe("machine crumb", () => {
     expect(chip?.textContent).not.toContain("Local");
   });
 
-  it("opens machine selection when multiple machines exist", async () => {
+  it("hides the machine crumb in browser mode when there is no machine choice", async () => {
+    const bar = await mountBar({ machines: [machine("local")] });
+
+    expect(machineChip(bar)).toBeUndefined();
+  });
+
+  it("is a plain machine picker in browser mode, without the location identity", async () => {
     const opened: string[] = [];
     const bar = await mountBar({ machines: [machine("local"), machine("remote-a")], onOpenSection: (section) => { opened.push(section); } });
 
     const chip = machineChip(bar);
     expect(chip?.tagName).toBe("BUTTON");
+    expect(chip?.textContent).toContain("Local");
+    expect(chip?.querySelector("img")).toBeNull();
+    expect(chip?.textContent).not.toContain(document.location.host);
     chip?.click();
     expect(opened).toEqual(["machines"]);
   });
 
-  it("shows the remote host for a selected remote machine", async () => {
-    const remote = machine("remote-a");
-    remote.baseUrl = "https://fleet-a.example.com/";
-    const bar = await mountBar({ machines: [machine("local"), remote], machine: remote });
+  it("keeps the location identity on the picker in PWA mode when machines exist", async () => {
+    const bar = await mountBar({ machines: [machine("local"), machine("remote-a")], locationIndicator: true });
 
-    expect(machineChip(bar)?.textContent).toContain("fleet-a.example.com");
+    const chip = machineChip(bar);
+    expect(chip?.tagName).toBe("BUTTON");
+    expect(chip?.textContent).toContain("Local");
+    expect(chip?.querySelector("img")).not.toBeNull();
+    expect(chip?.textContent).toContain(document.location.host);
   });
 
-  it("shows a machine icon alongside the label", async () => {
-    const bar = await mountBar({ machines: [machine("local")] });
+  it("shows the remote host for a selected remote machine in PWA mode", async () => {
+    const remote = machine("remote-a");
+    remote.baseUrl = "https://fleet-a.example.com/";
+    const bar = await mountBar({ machines: [machine("local"), remote], machine: remote, locationIndicator: true });
 
-    const icon = machineChip(bar)?.querySelector("img");
-    expect(icon?.getAttribute("src")).toContain("favicon.svg");
+    expect(machineChip(bar)?.textContent).toContain("fleet-a.example.com");
   });
 });
 
 interface BarFixture {
   machines: Machine[];
   machine?: Machine;
+  locationIndicator?: boolean;
   onOpenSection?: (section: "machines" | "projects" | "workspaces" | "sessions") => void;
 }
 
@@ -78,6 +91,7 @@ async function mountBar(fixture: BarFixture): Promise<AppContextBar> {
   const bar = new AppContextBar();
   bar.machines = fixture.machines;
   if (fixture.machine !== undefined) bar.machine = fixture.machine;
+  bar.locationIndicator = fixture.locationIndicator ?? false;
   if (fixture.onOpenSection !== undefined) bar.onOpenSection = fixture.onOpenSection;
   document.body.append(bar);
   await bar.updateComplete;
@@ -85,7 +99,7 @@ async function mountBar(fixture: BarFixture): Promise<AppContextBar> {
 }
 
 function machineChip(bar: AppContextBar): HTMLElement | undefined {
-  return bar.shadowRoot?.querySelector<HTMLElement>(".context-chip") ?? undefined;
+  return bar.shadowRoot?.querySelector<HTMLElement>(".machine-chip") ?? undefined;
 }
 
 function machine(id: string): Machine {

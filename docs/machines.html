@@ -197,9 +197,10 @@ PI WEB gateway you opened
               <p>
                 The machine control sits in the header next to the PI WEB brand. With several machines it is a
                 dropdown listing each machine with its own brand icon; the local entry shows the address of the
-                gateway you are connected to. With only the local machine it is a static bubble carrying the instance
-                favicon and that gateway address. On narrow layouts the breadcrumb's Machine chip carries the same
-                identity. Select a machine, then add projects, workspaces, and sessions on that selected machine. See
+                gateway you are connected to. With only the local machine there is nothing to select, so the control
+                stays a plain identity bubble in an installed PWA window, carrying the instance favicon and that
+                gateway address. On narrow layouts the breadcrumb's Machine chip carries the same identity. Select a
+                machine, then add projects, workspaces, and sessions on that selected machine. See
                 <a href="#instance-identity">Which instance is this?</a>.
               </p>
               <div class="callout">
@@ -211,16 +212,17 @@ PI WEB gateway you opened
             <section id="instance-identity">
               <h2>Which instance is this?</h2>
               <p>
-                The header always names the instance you are connected to: the PI WEB brand next to a machine
-                control. With several machines the control is a dropdown listing every machine with its own brand icon,
-                so you can see where each entry points before you select it. With only the local machine it is a static
-                bubble showing the instance favicon and the gateway address (host and any deployment path). On narrow
-                layouts the breadcrumb leads with a Machine chip carrying the same icon and address.
+                An installed PWA window has no browser URL bar or tab favicon, so PI WEB names the instance there
+                itself: with several machines, the header dropdown lists every machine with its own brand icon and the
+                local entry shows the gateway address; with only the local machine, a static bubble shows the instance
+                favicon and the gateway address (host and any deployment path). On narrow layouts the breadcrumb leads
+                with a Machine chip carrying the same icon and address. In a regular browser tab these location
+                indicators stay hidden — the browser chrome already identifies the instance — and the machine control
+                remains a pure selector.
               </p>
               <p>
-                This matters most in an installed PWA, which has no browser URL bar or tab favicon. The header address
-                is the ground truth for which gateway serves the window; the selected machine decides which runtime your
-                projects, workspaces, and sessions live on.
+                The address is the ground truth for which gateway serves the window; the selected machine decides which
+                runtime your projects, workspaces, and sessions live on.
               </p>
               <p>
                 Development deployments recolor the identity purple instead of the stock teal: the favicon, the PWA

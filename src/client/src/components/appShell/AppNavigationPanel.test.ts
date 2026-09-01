@@ -39,6 +39,12 @@ describe("header identity", () => {
 
     expect(panel.shadowRoot?.querySelector("machine-switcher")).toBeInstanceOf(MachineSwitcher);
   });
+
+  it("forwards the location-indicator flag to the machine switcher", async () => {
+    const panel = await mountHeaderPanel([machine("local")], true);
+
+    expect(section(panel, "machine-switcher", MachineSwitcher).locationIndicator).toBe(true);
+  });
 });
 
 describe("machine status wiring", () => {
@@ -92,9 +98,10 @@ function section<T>(panel: AppNavigationPanel, selector: string, type: abstract 
   return element;
 }
 
-async function mountHeaderPanel(machines: Machine[]): Promise<AppNavigationPanel> {
+async function mountHeaderPanel(machines: Machine[], locationIndicator = false): Promise<AppNavigationPanel> {
   const panel = new AppNavigationPanel();
   panel.machines = machines;
+  panel.locationIndicator = locationIndicator;
   document.body.append(panel);
   await panel.updateComplete;
   return panel;

@@ -12,6 +12,8 @@ import type { KeyboardNavigableSection } from "./navigationFocus";
 export class MachineSwitcher extends LitElement implements KeyboardNavigableSection {
   @property({ attribute: false }) machines: Machine[] = [];
   @property({ attribute: false }) selected?: Machine;
+  /** PWA display mode: the single-machine identity bubble only shows there. */
+  @property({ type: Boolean }) locationIndicator = false;
   @property({ attribute: false }) statuses: Record<string, MachineHealth> = {};
   /** Per-machine status trees, keyed by machine id; a machine without one shows no indicator. */
   @property({ attribute: false }) statusSnapshots: Record<string, MachineStatusSnapshot> = {};
@@ -55,9 +57,10 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
   override render() {
     const selected = this.selectedMachine();
     if (selected === undefined) return null;
-    // A single machine offers nothing to select: show a static identity bubble
-    // carrying the machine's icon and URL instead of a dropdown.
-    if (this.machines.length <= 1) return this.renderMachineInfo(selected);
+    // A single machine offers nothing to select: in PWA mode it becomes a
+    // static identity bubble with the machine's icon and URL; in browser mode
+    // the browser chrome already identifies the instance, so nothing renders.
+    if (this.machines.length <= 1) return this.locationIndicator ? this.renderMachineInfo(selected) : null;
     const status = machineStatus(selected, this.statuses);
     const label = selected.name;
     return html`
@@ -71,8 +74,8 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
           @click=${(event: MouseEvent) => { this.toggleMenu(event.currentTarget); }}
           @keydown=${(event: KeyboardEvent) => { this.handleSwitcherButtonKeydown(event); }}
         >
-          ${this.renderActivity(selected)}
           ${this.renderMachineIcon(selected)}
+          ${this.renderActivity(selected)}
           <span class="machine-switcher-text">
             <span class="machine-switcher-kicker">Machine</span>
             <span class="machine-switcher-label">${label}</span>
@@ -131,8 +134,8 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
   private renderMachineInfo(machine: Machine): TemplateResult {
     return html`
       <div class="machine-info" title=${machineSubtitle(machine)}>
-        ${this.renderActivity(machine)}
         ${this.renderMachineIcon(machine)}
+        ${this.renderActivity(machine)}
         <span class="machine-info-url">${machineSubtitle(machine)}</span>
       </div>
     `;

@@ -56,7 +56,7 @@ describe("machine-switcher status indicator", () => {
   });
 
   it("keeps the unread dot on the single-machine info bubble", async () => {
-    const switcher = await mountSwitcher([machine("local", "local")], { local: machineStatusSnapshot({ machine: { "core:unread": true } }) });
+    const switcher = await mountSwitcher([machine("local", "local")], { local: machineStatusSnapshot({ machine: { "core:unread": true } }) }, {}, true);
 
     const dot = switcher.shadowRoot?.querySelector(".machine-info .activity-indicator.unread");
     expect(dot).not.toBeNull();
@@ -73,10 +73,18 @@ describe("machine icons", () => {
   });
 
   it("dims the icon of an offline machine", async () => {
-    const switcher = await mountSwitcher([machine("local", "local")], {}, { local: health("offline") });
+    const switcher = await mountSwitcher([machine("local", "local")], {}, { local: health("offline") }, true);
 
     const icon = switcher.shadowRoot?.querySelector<HTMLImageElement>(".machine-info .machine-icon");
     expect(icon?.classList.contains("dimmed")).toBe(true);
+  });
+
+  it("places the switcher button's activity indicator to the right of the favicon", async () => {
+    const switcher = await mountSwitcher([machine("local", "local"), machine("remote-a", "remote")], { local: machineStatusSnapshot({ machine: { "core:unread": true } }) });
+
+    const icon = requiredElement(switcherButton(switcher), ".machine-icon");
+    const dot = requiredElement(switcherButton(switcher), ".activity-indicator");
+    expect(icon.compareDocumentPosition(dot)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it("shows each machine's own favicon in the dropdown", async () => {
@@ -119,8 +127,8 @@ describe("machine icons", () => {
 });
 
 describe("single-machine info bubble", () => {
-  it("renders a static bubble instead of a dropdown when only the local machine exists", async () => {
-    const switcher = await mountSwitcher([machine("local", "local")], {});
+  it("renders a static bubble instead of a dropdown when only the local machine exists in PWA mode", async () => {
+    const switcher = await mountSwitcher([machine("local", "local")], {}, {}, true);
 
     expect(switcher.shadowRoot?.querySelector(".machine-switcher-button")).toBeNull();
     const info = switcher.shadowRoot?.querySelector<HTMLElement>(".machine-info");
@@ -128,8 +136,15 @@ describe("single-machine info bubble", () => {
     expect(info?.querySelector(".machine-chevron")).toBeNull();
   });
 
-  it("carries just the machine icon and URL", async () => {
+  it("renders nothing for a single machine in browser mode", async () => {
     const switcher = await mountSwitcher([machine("local", "local")], {});
+
+    expect(switcher.shadowRoot?.querySelector(".machine-info")).toBeNull();
+    expect(switcher.shadowRoot?.querySelector(".machine-switcher-button")).toBeNull();
+  });
+
+  it("carries just the machine icon and URL", async () => {
+    const switcher = await mountSwitcher([machine("local", "local")], {}, {}, true);
 
     const info = switcher.shadowRoot?.querySelector<HTMLElement>(".machine-info");
     expect(info?.querySelector(".machine-info-url")?.textContent).toBe(document.location.host);
@@ -138,8 +153,16 @@ describe("single-machine info bubble", () => {
     expect(info?.querySelector(".machine-switcher-text")).toBeNull();
   });
 
+  it("places the activity indicator to the right of the favicon", async () => {
+    const switcher = await mountSwitcher([machine("local", "local")], { local: machineStatusSnapshot({ machine: { "core:unread": true } }) }, {}, true);
+
+    const icon = requiredElement(switcher.shadowRoot, ".machine-info .machine-icon");
+    const dot = requiredElement(switcher.shadowRoot, ".machine-info .activity-indicator");
+    expect(icon.compareDocumentPosition(dot)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
   it("does not open a menu when clicked", async () => {
-    const switcher = await mountSwitcher([machine("local", "local")], {});
+    const switcher = await mountSwitcher([machine("local", "local")], {}, {}, true);
 
     switcher.shadowRoot?.querySelector<HTMLElement>(".machine-info")?.click();
     await switcher.updateComplete;
@@ -148,7 +171,7 @@ describe("single-machine info bubble", () => {
   });
 
   it("is not keyboard-focusable", async () => {
-    const switcher = await mountSwitcher([machine("local", "local")], {});
+    const switcher = await mountSwitcher([machine("local", "local")], {}, {}, true);
 
     expect(await switcher.focusSelectedOrFirst()).toBe(false);
   });
@@ -156,6 +179,7 @@ describe("single-machine info bubble", () => {
   it("renders nothing while no machines are loaded", async () => {
     const switcher = new MachineSwitcher();
     switcher.machines = [];
+    switcher.locationIndicator = true;
     document.body.append(switcher);
     await switcher.updateComplete;
 
@@ -164,7 +188,7 @@ describe("single-machine info bubble", () => {
   });
 });
 
-async function mountSwitcher(machines: Machine[], statusSnapshots: Record<string, MachineStatusSnapshot>, statuses: Record<string, MachineHealth> = {}): Promise<MachineSwitcher> {
+async function mountSwitcher(machines: Machine[], statusSnapshots: Record<string, MachineStatusSnapshot>, statuses: Record<string, MachineHealth> = {}, locationIndicator = false): Promise<MachineSwitcher> {
   const switcher = new MachineSwitcher();
   switcher.machines = machines;
   const selected = machines[0];
@@ -172,6 +196,7 @@ async function mountSwitcher(machines: Machine[], statusSnapshots: Record<string
   switcher.selected = selected;
   switcher.statusSnapshots = statusSnapshots;
   switcher.statuses = statuses;
+  switcher.locationIndicator = locationIndicator;
   document.body.append(switcher);
   await switcher.updateComplete;
   return switcher;
@@ -181,6 +206,12 @@ function switcherButton(switcher: MachineSwitcher): HTMLElement {
   const button = switcher.shadowRoot?.querySelector(".machine-switcher-button");
   if (!(button instanceof HTMLElement)) throw new Error("Expected the machine switcher button");
   return button;
+}
+
+function requiredElement(root: ParentNode | null | undefined, selector: string): Element {
+  const element = root?.querySelector(selector);
+  if (element === null || element === undefined) throw new Error(`Expected ${selector}`);
+  return element;
 }
 
 function optionFor(switcher: MachineSwitcher, machineName: string): Element {
