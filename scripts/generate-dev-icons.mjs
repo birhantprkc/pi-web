@@ -11,9 +11,10 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { deflateSync, inflateSync } from "node:zlib";
 
-const PUBLIC_DIR = new URL("../src/client/public/", import.meta.url).pathname;
+const PUBLIC_DIR = fileURLToPath(new URL("../src/client/public/", import.meta.url));
 
 /** Teal brand bar in the stock artwork; recolored to the purple accent. */
 const SOURCE_BAR = [0x00, 0xf0, 0xd8];
@@ -166,6 +167,6 @@ export function generateDevIcons(publicDir = PUBLIC_DIR) {
   return written;
 }
 
-if (process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   for (const name of generateDevIcons()) console.log(`wrote ${name}`);
 }

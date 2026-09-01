@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { decodePng, encodePng, recolorBar } from "./generate-dev-icons.mjs";
 
-const PUBLIC_DIR = new URL("../src/client/public/", import.meta.url).pathname;
+const PUBLIC_DIR = fileURLToPath(new URL("../src/client/public/", import.meta.url));
 
 const ICON_PAIRS = [
   ["pwa-icon-192.png", "pwa-icon-dev-192.png"],
