@@ -25,6 +25,22 @@ describe("shouldShowMachinesSection", () => {
   });
 });
 
+describe("header identity", () => {
+  it("shows the plain brand without an icon or address", async () => {
+    const panel = await mountHeaderPanel([machine("local")]);
+
+    expect(panel.shadowRoot?.querySelector("header strong")?.textContent).toBe("PI WEB");
+    expect(panel.shadowRoot?.querySelector(".brand-icon")).toBeNull();
+    expect(panel.shadowRoot?.querySelector(".brand-domain")).toBeNull();
+  });
+
+  it("keeps the machine switcher visible with a single machine", async () => {
+    const panel = await mountHeaderPanel([machine("local")]);
+
+    expect(panel.shadowRoot?.querySelector("machine-switcher")).toBeInstanceOf(MachineSwitcher);
+  });
+});
+
 describe("machine status wiring", () => {
   it("gives machine sections every snapshot and project and workspace sections the selected machine's", async () => {
     const local = machineStatusSnapshot({ machine: { "core:working": true } });
@@ -74,6 +90,14 @@ function section<T>(panel: AppNavigationPanel, selector: string, type: abstract 
   const element = panel.shadowRoot?.querySelector(selector);
   if (!(element instanceof type)) throw new Error(`Expected a ${selector} section`);
   return element;
+}
+
+async function mountHeaderPanel(machines: Machine[]): Promise<AppNavigationPanel> {
+  const panel = new AppNavigationPanel();
+  panel.machines = machines;
+  document.body.append(panel);
+  await panel.updateComplete;
+  return panel;
 }
 
 function machine(id: string): Machine {

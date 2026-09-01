@@ -2,6 +2,7 @@ import { LitElement, css, html, type PropertyValues, type TemplateResult } from 
 import { customElement, property, state } from "lit/decorators.js";
 import type { Machine, MachineHealth, MachineStatus } from "../api";
 import type { MachineStatusSnapshot } from "../../../shared/machineStatus";
+import { browserGatewayDisplayUrl, machineIconUrl } from "../instanceIdentity";
 import { actionMenuPanelStyle } from "./actionMenu";
 import { hasStatusUnread, renderActivityIndicator, statusActivityKind } from "./activityBadge";
 import { canRemoveMachine } from "./MachineList";
@@ -41,6 +42,7 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
 
   protected override updated(changed: PropertyValues<this>): void {
     if (changed.has("machines") && this.open && this.selectedMachine() === undefined) this.open = false;
+    if (changed.has("machines") && this.open && this.machines.length <= 1) this.open = false;
     if (changed.has("machines") && this.openActionsMachineId !== undefined && !this.machines.some((machine) => machine.id === this.openActionsMachineId)) this.openActionsMachineId = undefined;
   }
 
@@ -53,6 +55,9 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
   override render() {
     const selected = this.selectedMachine();
     if (selected === undefined) return null;
+    // A single machine offers nothing to select: show a static identity bubble
+    // carrying the machine's icon and URL instead of a dropdown.
+    if (this.machines.length <= 1) return this.renderMachineInfo(selected);
     const status = machineStatus(selected, this.statuses);
     const label = selected.name;
     return html`
@@ -67,6 +72,7 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
           @keydown=${(event: KeyboardEvent) => { this.handleSwitcherButtonKeydown(event); }}
         >
           ${this.renderActivity(selected)}
+          ${this.renderMachineIcon(selected)}
           <span class="machine-switcher-text">
             <span class="machine-switcher-kicker">Machine</span>
             <span class="machine-switcher-label">${label}</span>
@@ -98,8 +104,8 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
           @click=${() => { this.select(machine); }}
           @keydown=${(event: KeyboardEvent) => { this.handleMachineOptionKeydown(event); }}
         >
-          <span class="machine-option-name">${this.renderActivity(machine)}<span>${machine.name}</span></span>
-          <small>${machine.kind === "local" ? "Local Pi Web" : machine.baseUrl ?? "Remote Pi Web"} · ${machineStatusLabel(status)}</small>
+          <span class="machine-option-name">${this.renderMachineIcon(machine)}${this.renderActivity(machine)}<span>${machine.name}</span></span>
+          <small>${machineSubtitle(machine)} · ${machineStatusLabel(status)}</small>
         </button>
         ${hasActions ? html`
           <div class="machine-option-actions">
@@ -121,6 +127,28 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
       </div>
     `;
   }
+
+  private renderMachineInfo(machine: Machine): TemplateResult {
+    return html`
+      <div class="machine-info" title=${machineSubtitle(machine)}>
+        ${this.renderActivity(machine)}
+        ${this.renderMachineIcon(machine)}
+        <span class="machine-info-url">${machineSubtitle(machine)}</span>
+      </div>
+    `;
+  }
+
+  private renderMachineIcon(machine: Machine): TemplateResult {
+    const status = machineStatus(machine, this.statuses);
+    const dimmed = status === "offline" || status === "error";
+    return html`<img class=${dimmed ? "machine-icon dimmed" : "machine-icon"} src=${machineIconUrl(machine)} alt="" @error=${this.hideBrokenIcon} />`;
+  }
+
+  private readonly hideBrokenIcon = (event: Event): void => {
+    // A remote that is unreachable or predates identity assets loses its icon
+    // rather than showing a broken image.
+    if (event.currentTarget instanceof HTMLImageElement) event.currentTarget.style.display = "none";
+  };
 
   private renderActivity(machine: Machine): TemplateResult | undefined {
     const flags = this.statusSnapshots[machine.id]?.machine;
@@ -294,12 +322,17 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
     .activity-indicator.unread { border-radius: 50%; background: var(--pi-accent); animation: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--pi-accent) 20%, transparent); }
     .unread-ring { flex: 0 0 auto; box-sizing: border-box; display: inline-grid; place-items: center; width: 9px; height: 9px; border: 1.5px solid var(--pi-accent); border-radius: 50%; }
     .unread-ring .activity-indicator { width: 5px; height: 5px; }
+    .machine-icon { flex: 0 0 auto; width: 16px; height: 16px; }
+    .machine-icon.dimmed { filter: grayscale(1); opacity: .45; }
+    .machine-option-main .machine-icon { width: 14px; height: 14px; }
+    .machine-info { box-sizing: border-box; width: 100%; min-width: 0; display: flex; align-items: center; gap: 6px; border: 1px solid var(--pi-border); border-radius: 999px; background: var(--pi-surface); color: var(--pi-text); padding: 5px 8px; }
+    .machine-info-url { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
     .machine-switcher-menu { position: fixed; z-index: 10000; box-sizing: border-box; min-width: min(280px, calc(100vw - 16px)); overflow: auto; padding: 4px; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); box-shadow: 0 8px 24px var(--pi-shadow); }
     .machine-option { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px; align-items: stretch; margin: 2px 0; }
     .machine-option.no-actions { grid-template-columns: minmax(0, 1fr); }
     .machine-option-main, .machine-option-actions-toggle, .machine-option-actions-panel button { border: 0; border-radius: 7px; background: transparent; color: var(--pi-text); cursor: pointer; }
     .machine-option-main { min-width: 0; display: grid; gap: 2px; padding: 7px 8px; text-align: left; }
-    .machine-option-name { min-width: 0; display: flex; align-items: baseline; gap: 6px; }
+    .machine-option-name { min-width: 0; display: flex; align-items: center; gap: 6px; }
     .machine-option-name span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .machine-option-main small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pi-muted); }
     .machine-option-actions { position: relative; align-self: stretch; }
@@ -324,6 +357,12 @@ function machineStatusLabel(status: MachineStatus): string {
 
 function machineTitle(machine: Machine): string {
   return machine.baseUrl ?? machine.name;
+}
+
+/** The local machine identifies itself by the serving gateway's URL. */
+function machineSubtitle(machine: Machine): string {
+  if (machine.kind === "local") return browserGatewayDisplayUrl();
+  return machine.baseUrl ?? "Remote Pi Web";
 }
 
 function machineSwitcherMenuStyle(target: EventTarget | null): string {
