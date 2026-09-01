@@ -290,7 +290,7 @@ async function createSessionDaemonRuntime() {
     }));
     auth.subscribe((change) => { sessions.applyAuthChange(change); });
     const terminals = new TerminalService(eventHub, workspaceActivity, serverNotices);
-    const workspaceRemovals = new WorkspaceRemovalService(workspaceProviders, terminals);
+    const workspaceRemovals = new WorkspaceRemovalService(workspaceProviders, terminals, { notices: serverNotices });
     const runtimeComponent = Object.freeze({
       // The deprecated-input report is fixed at startup: it was detected from
       // the captured pre-scrub daemon environment and the config snapshot this
