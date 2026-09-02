@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ServerNotice, ServerNoticeEvent, ServerNoticeSnapshot } from "../../shared/apiTypes";
-import { ServerNoticesController, type ServerNoticesApi } from "./serverNotices";
+import { ServerNoticesController, type ServerNoticeDisplayContext, type ServerNoticesApi, visibleServerNotices } from "./serverNotices";
 
 function notice(id: string, severity: ServerNotice["severity"] = "error", message = id): ServerNotice {
   return { id, severity, message, createdAt: "2026-08-01T00:00:00.000Z" };
@@ -13,6 +13,36 @@ function snapshot(revision: number, notices: ServerNotice[], daemonInstanceId = 
 function event(value: ServerNoticeSnapshot): ServerNoticeEvent {
   return { type: "notices.updated", snapshot: value };
 }
+
+describe("visibleServerNotices", () => {
+  it("keeps unscoped notices visible while hiding a project notice outside its project", () => {
+    const globalNotice = notice("global");
+    const projectNotice = { ...notice("project"), context: { projectId: "project-a" } };
+
+    expect(visibleServerNotices([globalNotice, projectNotice], { projectId: "project-a" })).toEqual([globalNotice, projectNotice]);
+    expect(visibleServerNotices([globalNotice, projectNotice], { projectId: "project-b" })).toEqual([globalNotice]);
+  });
+
+  it("keeps worktree deletion notices at project scope across the involved worktrees", () => {
+    const deletionNotice = {
+      ...notice("deletion"),
+      source: "workspace.delete",
+      context: { projectId: "project-a", workspaceId: "target-worktree" },
+    };
+
+    expect(visibleServerNotices([deletionNotice], { projectId: "project-a", workspaceId: "runner-worktree" })).toEqual([deletionNotice]);
+    expect(visibleServerNotices([deletionNotice], { projectId: "project-b", workspaceId: "other-worktree" })).toEqual([]);
+  });
+
+  it("matches ordinary workspace and session notice context to the active namespace", () => {
+    const workspaceNotice = { ...notice("workspace"), context: { projectId: "project-a", workspaceId: "workspace-a" } };
+    const sessionNotice = { ...notice("session"), context: { projectId: "project-a", workspaceId: "workspace-a", sessionId: "session-a" } };
+    const context: ServerNoticeDisplayContext = { projectId: "project-a", workspaceId: "workspace-a", sessionId: "session-a" };
+
+    expect(visibleServerNotices([workspaceNotice, sessionNotice], context)).toEqual([workspaceNotice, sessionNotice]);
+    expect(visibleServerNotices([workspaceNotice, sessionNotice], { projectId: "project-a", workspaceId: "workspace-b", sessionId: "session-b" })).toEqual([]);
+  });
+});
 
 describe("ServerNoticesController", () => {
   it("installs refreshed snapshots and accepts only newer revisions for the current daemon", async () => {

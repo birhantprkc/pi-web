@@ -1,5 +1,6 @@
 import { noticesApi } from "./api";
 import type { ServerNotice, ServerNoticeEvent, ServerNoticeSnapshot } from "../../shared/apiTypes";
+import { workspaceDeleteOperation } from "../../shared/workspaceDeletion";
 
 const MAX_BUFFERED_NETWORK_EVENTS = 100;
 
@@ -11,6 +12,21 @@ export interface ServerNoticeProjectionView {
   daemonInstanceId: string;
   revision: number;
   notices: ServerNotice[];
+}
+
+/** Selected front-end namespace used to project a machine's complete notice snapshot. */
+export interface ServerNoticeDisplayContext {
+  projectId?: string;
+  workspaceId?: string;
+  sessionId?: string;
+}
+
+/**
+ * Keep the server snapshot complete and scope only its front-end presentation.
+ * Worktree deletion is project-owned because the operation spans two worktrees.
+ */
+export function visibleServerNotices(notices: readonly ServerNotice[], context: ServerNoticeDisplayContext): ServerNotice[] {
+  return notices.filter((notice) => serverNoticeIsVisible(notice, context));
 }
 
 export interface ServerNoticesApi {
@@ -327,6 +343,27 @@ export class ServerNoticesController {
   private isCurrent(state: MachineServerNoticeState, generation: number): boolean {
     return this.machines.get(state.machineId) === state && state.generation === generation;
   }
+}
+
+function serverNoticeIsVisible(notice: ServerNotice, context: ServerNoticeDisplayContext): boolean {
+  const noticeContext = notice.context;
+  if (notice.source === workspaceDeleteOperation) {
+    const projectId = contextValue(noticeContext, "projectId");
+    return projectId === undefined || projectId === context.projectId;
+  }
+
+  const projectId = contextValue(noticeContext, "projectId");
+  const workspaceId = contextValue(noticeContext, "workspaceId");
+  const sessionId = contextValue(noticeContext, "sessionId");
+  if (projectId === undefined && workspaceId === undefined && sessionId === undefined) return true;
+  return (projectId === undefined || projectId === context.projectId)
+    && (workspaceId === undefined || workspaceId === context.workspaceId)
+    && (sessionId === undefined || sessionId === context.sessionId);
+}
+
+function contextValue(context: ServerNotice["context"], key: string): string | undefined {
+  const value = context?.[key];
+  return typeof value === "string" ? value : undefined;
 }
 
 function projectionFromSnapshot(snapshot: ServerNoticeSnapshot): ProjectionData {

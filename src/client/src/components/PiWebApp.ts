@@ -30,7 +30,7 @@ import { selectedNotificationView } from "../sessionNotifications";
 import { SessionUnreadController } from "../sessionUnread";
 import { initialSessionWarningVisibilityState, reconcileSessionWarningVisibility, toggleSessionWarnings } from "../sessionWarningVisibility";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
-import { ServerNoticesController } from "../serverNotices";
+import { ServerNoticesController, visibleServerNotices } from "../serverNotices";
 import type { ServerNotice } from "../../../shared/apiTypes";
 import type { PluginMachine, PluginPromptEditor, QualifiedContributionId, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspacePanelContribution, PluginRuntimeContext, TerminalCommandRunsInternalRuntime, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext, WorkspacePluginBinding } from "../plugins/types";
 import { CLASSIC_THEME_ID, DEFAULT_THEME_PREFERENCE, applyPiWebTheme, findThemePairForTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference, type ThemePreferenceResolution } from "../theme";
@@ -2307,8 +2307,9 @@ export class PiWebApp extends LitElement {
   private renderServerNoticeBanners(): TemplateResult | null {
     const machineId = selectedMachineId(this.state);
     const projection = this.serverNotices.projection(machineId);
-    if (projection?.status !== "fresh" || projection.notices.length === 0) return null;
-    return html`${projection.notices.map((notice: ServerNotice) => errorBanner(notice.message, () => {
+    const notices = projection?.status === "fresh" ? visibleServerNotices(projection.notices, browserErrorContext(this.state)) : [];
+    if (notices.length === 0) return null;
+    return html`${notices.map((notice: ServerNotice) => errorBanner(notice.message, () => {
       void this.serverNotices.dismiss(machineId, notice.id);
     }, notice.severity))}`;
   }
