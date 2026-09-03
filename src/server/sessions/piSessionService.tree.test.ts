@@ -204,7 +204,7 @@ describe("PiSessionService session-tree behavior", () => {
     await service.dispose();
   });
 
-  it("keeps a no-summary branch authoritative until the next prompt makes it durable", async () => {
+  it("releases a no-summary branch when the next prompt is durable beneath an external descendant", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "pi-web-tree-navigation-"));
     const workspace = join(tempDir, "workspace");
     const sessionDir = join(tempDir, "sessions");
@@ -266,14 +266,6 @@ describe("PiSessionService session-tree behavior", () => {
 
       await service.prompt(sessionRef(SESSION_ID, workspace), "continue here");
       await vi.waitFor(() => { expect(prompt).toHaveBeenCalledWith("continue here", undefined); });
-      await expect(service.messages(sessionRef(SESSION_ID, workspace))).resolves.toMatchObject({
-        messages: [
-          { role: "user", content: "original question" },
-          { role: "assistant", content: "selected answer" },
-          { role: "user", content: "continue here" },
-        ],
-        total: 3,
-      });
 
       const promptLeafId = manager.getLeafId();
       if (promptLeafId === null) throw new Error("Expected the prompt to append a session entry");

@@ -1139,11 +1139,11 @@ export class PiSessionService implements SessionRouteService {
   /** Runtime-identity gate held while Pi may await abandoned-branch summarization. */
   private readonly treeNavigations = new WeakSet<PiAgentSession>();
   /**
-   * Live leaf selections made without an appended summary entry. Pi persists
-   * entries, not a bare leaf move, so disk cannot represent these selections
-   * until the next append anchors the branch.
+   * Bare live leaf selected without an appended summary entry. Recording that
+   * leaf distinguishes the unpersisted move from a later runtime append that
+   * can anchor the selected branch on disk.
    */
-  private readonly unpersistedTreeBranches = new WeakSet<PiAgentSession>();
+  private readonly unpersistedTreeBranchLeaves = new WeakMap<PiAgentSession, string | null>();
   /** Counts async operations that may append an entry before they settle. */
   private readonly sessionEntryMutationCounts = new WeakMap<PiAgentSession, number>();
   /** Settings-wide queue preventing enabled-model read/modify/write races across sessions. */
@@ -2632,11 +2632,14 @@ export class PiSessionService implements SessionRouteService {
       if (result.summaryEntry !== undefined) {
         // A summary entry durably identifies the selected branch as the file's
         // newest leaf, superseding any earlier bare selection.
-        this.unpersistedTreeBranches.delete(session);
-      } else if (session.sessionManager.getLeafId() !== oldLeafId) {
-        // SessionManager.branch()/resetLeaf() only move Pi's in-memory leaf.
-        // Keep that branch authoritative until a later append makes disk agree.
-        this.unpersistedTreeBranches.add(session);
+        this.unpersistedTreeBranchLeaves.delete(session);
+      } else {
+        const selectedLeafId = session.sessionManager.getLeafId();
+        if (selectedLeafId !== oldLeafId) {
+          // SessionManager.branch()/resetLeaf() only move Pi's in-memory leaf.
+          // Keep that branch authoritative until a later append makes disk agree.
+          this.unpersistedTreeBranchLeaves.set(session, selectedLeafId);
+        }
       }
 
       if (this.isCurrentActiveSession(session)) this.publishActivity(session, "session tree navigated", "idle");
@@ -3286,12 +3289,16 @@ export class PiSessionService implements SessionRouteService {
     // Reading also yields. A prompt that started meanwhile must still win over
     // the completed disk snapshot and its potentially older event watermark.
     if (this.hasActiveWork(session)) return session.sessionManager.getBranch();
-    if (this.unpersistedTreeBranches.has(session)) {
-      const snapshotLeafId = transcriptBranchLeafId(snapshot);
-      if (snapshotLeafId !== session.sessionManager.getLeafId()) return session.sessionManager.getBranch();
-      // A later append now anchors the live selection in the JSONL tree. Resume
-      // ordinary idle snapshots so external appends remain visible.
-      this.unpersistedTreeBranches.delete(session);
+    const selectedLeafId = this.unpersistedTreeBranchLeaves.get(session);
+    if (selectedLeafId !== undefined) {
+      const runtimeLeafId = session.sessionManager.getLeafId();
+      const selectedBranchIsAnchored = runtimeLeafId !== null
+        && runtimeLeafId !== selectedLeafId
+        && transcriptBranchIncludesEntry(snapshot, runtimeLeafId);
+      if (!selectedBranchIsAnchored) return session.sessionManager.getBranch();
+      // A later runtime append now anchors the live selection in this persisted
+      // branch. Resume ordinary idle snapshots, including external descendants.
+      this.unpersistedTreeBranchLeaves.delete(session);
     }
     return snapshot;
   }
@@ -4769,11 +4776,8 @@ function setSessionTreeLeaf(manager: PiSessionManager, leafId: string | null): v
   else manager.branch(leafId);
 }
 
-/** Last branch entry id, with `null` representing an intentionally empty root branch. */
-function transcriptBranchLeafId(entries: readonly unknown[]): string | null | undefined {
-  const leaf = entries.at(-1);
-  if (leaf === undefined) return null;
-  return isRecord(leaf) && typeof leaf["id"] === "string" ? leaf["id"] : undefined;
+function transcriptBranchIncludesEntry(entries: readonly unknown[], entryId: string): boolean {
+  return entries.some((entry) => isRecord(entry) && entry["id"] === entryId);
 }
 
 /** custom entry type used to persist parent -> child subsession links outside LLM context. */
