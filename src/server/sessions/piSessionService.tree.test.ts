@@ -1,7 +1,7 @@
 import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import type { SessionTreeNavigateRequest, SessionTreeSummaryChoice } from "../../shared/apiTypes.js";
 import { WorkspaceActivityService } from "../activity/workspaceActivityService.js";
@@ -118,6 +118,89 @@ describe("PiSessionService session-tree behavior", () => {
     expect(service.activeCount()).toBe(1);
     expect(fake.calls.dispose).toBe(0);
 
+    await service.dispose();
+  });
+
+  it("restores editor semantics when an editable message is already the active leaf", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "pi-web-active-tree-target-"));
+    const workspace = join(tempDir, "workspace");
+    const agentDir = join(tempDir, "agent");
+    await mkdir(workspace, { recursive: true });
+    const manager = SessionManager.inMemory(workspace, { id: SESSION_ID });
+    const { session: piSession } = await createAgentSession({
+      cwd: workspace,
+      agentDir,
+      modelRuntime: testModelRuntime,
+      noTools: "all",
+      sessionManager: manager,
+    });
+    const navigateTree = vi.fn<NavigateTree>((targetId, options) => piSession.navigateTree(targetId, options));
+    const fake = fakeRuntime(SESSION_ID, {
+      sessionFile: undefined,
+      sessionManager: manager,
+      navigateTree,
+    });
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      archiveStore: emptyArchiveStore(),
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord(SESSION_ID, workspace)]),
+      heartbeatIntervalMs: 60_000,
+    });
+
+    try {
+      manager.resetLeaf();
+      const userId = manager.appendMessage({ role: "user", content: "edit active user", timestamp: Date.now() });
+      await expect(service.navigateTree(sessionRef(SESSION_ID, workspace), {
+        targetId: userId,
+        expectedLeafId: userId,
+        summary: { mode: "none" },
+      })).resolves.toEqual({ cancelled: false, editorText: "edit active user" });
+      expect(manager.getLeafId()).toBeNull();
+
+      const customId = manager.appendCustomMessageEntry("test", "edit active custom", true);
+      await expect(service.navigateTree(sessionRef(SESSION_ID, workspace), {
+        targetId: customId,
+        expectedLeafId: customId,
+        summary: { mode: "none" },
+      })).resolves.toEqual({ cancelled: false, editorText: "edit active custom" });
+      expect(manager.getLeafId()).toBeNull();
+
+      const ordinaryCustomId = manager.appendCustomEntry("test-state", { preserved: true });
+      await expect(service.navigateTree(sessionRef(SESSION_ID, workspace), {
+        targetId: ordinaryCustomId,
+        expectedLeafId: ordinaryCustomId,
+        summary: { mode: "none" },
+      })).resolves.toEqual({ cancelled: false });
+      expect(manager.getLeafId()).toBe(ordinaryCustomId);
+    } finally {
+      await service.dispose();
+      piSession.dispose();
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("restores an active editable leaf when the compatibility navigation is cancelled", async () => {
+    let leafId: string | null = "target-1";
+    const parent = { type: "message", id: "parent-1", parentId: null, message: { role: "assistant", content: "answer" } };
+    const target = { type: "message", id: "target-1", parentId: "parent-1", message: { role: "user", content: "edit me" } };
+    const navigateTree = vi.fn<NavigateTree>();
+    navigateTree
+      .mockResolvedValueOnce({ cancelled: false })
+      .mockResolvedValueOnce({ cancelled: true, aborted: true });
+    const { service } = treeHarness({
+      getLeafId: () => leafId,
+      getBranch: () => leafId === "target-1" ? [parent, target] : [parent],
+      branch: (targetId) => { leafId = targetId; },
+      resetLeaf: () => { leafId = null; },
+    }, { navigateTree });
+
+    await expect(service.navigateTree(
+      sessionRef(SESSION_ID),
+      navigationRequest({ mode: "none" }, "target-1"),
+    )).resolves.toEqual({ cancelled: true, aborted: true });
+    expect(leafId).toBe("target-1");
     await service.dispose();
   });
 
