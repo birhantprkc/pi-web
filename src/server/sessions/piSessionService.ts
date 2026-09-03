@@ -1136,6 +1136,12 @@ export class PiSessionService implements SessionRouteService {
   private readonly commandService: SessionCommandService<PiAgentSession>;
   /** Runtime-identity gate held while Pi may await abandoned-branch summarization. */
   private readonly treeNavigations = new WeakSet<PiAgentSession>();
+  /**
+   * Live leaf selections made without an appended summary entry. Pi persists
+   * entries, not a bare leaf move, so disk cannot represent these selections
+   * until the next append anchors the branch.
+   */
+  private readonly unpersistedTreeBranches = new WeakSet<PiAgentSession>();
   /** Counts async operations that may append an entry before they settle. */
   private readonly sessionEntryMutationCounts = new WeakMap<PiAgentSession, number>();
   /** Settings-wide queue preventing enabled-model read/modify/write races across sessions. */
@@ -2581,7 +2587,8 @@ export class PiSessionService implements SessionRouteService {
     // may enter this runtime until Pi's potentially asynchronous summary settles.
     this.treeNavigations.add(session);
     try {
-      if (session.sessionManager.getLeafId() !== request.expectedLeafId) {
+      const oldLeafId = session.sessionManager.getLeafId();
+      if (oldLeafId !== request.expectedLeafId) {
         throw new Error("The session changed since /tree was opened. Reopen /tree and try again.");
       }
 
@@ -2593,6 +2600,16 @@ export class PiSessionService implements SessionRouteService {
           this.publishActivity(session, result.aborted === true ? "branch summary aborted" : "tree navigation cancelled", "idle");
         }
         return { cancelled: true, ...(result.aborted === undefined ? {} : { aborted: result.aborted }) };
+      }
+
+      if (result.summaryEntry !== undefined) {
+        // A summary entry durably identifies the selected branch as the file's
+        // newest leaf, superseding any earlier bare selection.
+        this.unpersistedTreeBranches.delete(session);
+      } else if (request.targetId !== oldLeafId) {
+        // SessionManager.branch()/resetLeaf() only move Pi's in-memory leaf.
+        // Keep that branch authoritative until a later append makes disk agree.
+        this.unpersistedTreeBranches.add(session);
       }
 
       if (this.isCurrentActiveSession(session)) this.publishActivity(session, "session tree navigated", "idle");
@@ -3241,7 +3258,15 @@ export class PiSessionService implements SessionRouteService {
     if (snapshot === undefined) return session.sessionManager.getBranch();
     // Reading also yields. A prompt that started meanwhile must still win over
     // the completed disk snapshot and its potentially older event watermark.
-    return this.hasActiveWork(session) ? session.sessionManager.getBranch() : snapshot;
+    if (this.hasActiveWork(session)) return session.sessionManager.getBranch();
+    if (this.unpersistedTreeBranches.has(session)) {
+      const snapshotLeafId = transcriptBranchLeafId(snapshot);
+      if (snapshotLeafId !== session.sessionManager.getLeafId()) return session.sessionManager.getBranch();
+      // A later append now anchors the live selection in the JSONL tree. Resume
+      // ordinary idle snapshots so external appends remain visible.
+      this.unpersistedTreeBranches.delete(session);
+    }
+    return snapshot;
   }
 
   /**
@@ -4693,6 +4718,13 @@ function transcriptMessageCount(entries: readonly unknown[]): number {
     if (isRecord(entry) && entry["type"] === "message") count += 1;
   }
   return count;
+}
+
+/** Last branch entry id, with `null` representing an intentionally empty root branch. */
+function transcriptBranchLeafId(entries: readonly unknown[]): string | null | undefined {
+  const leaf = entries.at(-1);
+  if (leaf === undefined) return null;
+  return isRecord(leaf) && typeof leaf["id"] === "string" ? leaf["id"] : undefined;
 }
 
 /** custom entry type used to persist parent -> child subsession links outside LLM context. */
